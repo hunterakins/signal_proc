@@ -126,12 +126,12 @@ def find_eps_bi(outer_list, s, delta_db, w, tol=.01, max_num_iter=1000):
     float (could be "middle", "a_largeish_number", or "left") depending on the case 
         The "epsilon" diagonal loading used for the WNGC beamformer
     """
-    left, right = np.power(10.0,-80), 1000.0 # set search bounds
+    left, right = np.power(10.0,-160), 1000.0 # set search bounds
     middle = np.power(10, .5*(np.log10(left) + np.log10(right))) # take geometric mean
     a_largeish_number = 1000.0 # fix the return value if delta_db = 0 is desired
     # if you want no white noise gain, epsilon should be infinite
     if delta_db == 0:
-        return 0
+        return right
     # find out if the constraint is already satisfied (aka your white noise gain is lower than even the MVDR processor implies
     wng_left = db_down(outer_list, s, left, w)
     if wng_left >= delta_db: # can't get any lower
@@ -275,7 +275,7 @@ def run_wnc(R_samp,replicas, delta_db):
     replicas - numpy 3d array
         First axis is receiver index, second is depth, third is range
         Values are complex pressure 
-    R_samp - numpy 3d array
+    R_samp - numpy 3d array (or 2d array)
         Sample cov, first two axes are the receiver indices, third axis is time
     delta_db - float <= 0 
         white noise gain
@@ -286,6 +286,8 @@ def run_wnc(R_samp,replicas, delta_db):
         final axis is beginning time of snapshot
         values are the wnc power output.
     """
+    if len(R_samp.shape) == 2:
+        R_samp = R_samp.reshape(R_samp.shape[0], R_samp.shape[1], 1)
     num_rcvrs, num_depths, num_ranges = replicas.shape
     num_guesses = num_depths*num_ranges #how many replicas
     num_times = R_samp.shape[-1]
@@ -332,6 +334,8 @@ def lookup_run_wnc(R_samp,replicas, delta_db):
         final axis is beginning time of snapshot
         values are the wnc power output.
     """
+    if len(R_samp.shape) == 2:
+        R_samp = R_samp.reshape(R_samp.shape[0], R_samp.shape[1], 1)
     num_rcvrs, num_depths, num_ranges = replicas.shape
     num_guesses = num_depths*num_ranges #how many replicas
     num_times = R_samp.shape[-1]
@@ -342,7 +346,7 @@ def lookup_run_wnc(R_samp,replicas, delta_db):
     """
     Now loop through replicas and compute beamformer output
     """
-    eps_vals =  np.logspace(-80, 3, 6000)
+    eps_vals =  np.logspace(-160, 3, 6000)
     for i in range(num_times):
         print('Proc for time i', i)
         curr_R = R_samp[:,:,i]
@@ -356,7 +360,7 @@ def lookup_run_wnc(R_samp,replicas, delta_db):
             """ Get epsilon value for specific white noise gain """
             #eps = find_eps_bi(outer_list, s,delta_db, w) # compute epsilon
             if delta_db == 0:
-                eps_val = 0
+                eps_val = 1000
             else:
                 eps_ind = lookup_eps_bi(K_inv_list, delta_db, w)
                 eps_val = eps_vals[eps_ind]
