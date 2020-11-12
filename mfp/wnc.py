@@ -46,6 +46,26 @@ def get_w_wn(outer_list, s, eps, w):
     w_wn = numer/denom
     return w_wn
 
+def get_mcm_w_wn(outer_list, s, eps, E, d):
+    """
+    Compute thewhite noise gain constraint - MCM weighting vector as a function of a diagonal loading epsilon in terms of the replica w and eigendecomposition of the sample covariance
+    v - numpy matrix
+        eigenvectors as columns of matrix, eigenvector  of covariance matrix (guaranteed orthog.)
+    s - numpy 1-d array
+       eigenvalues of covariance (sorted to match up with columns of v)
+    eps - float
+        regularization constant
+    E - numpy 2d array
+        matrix of constraint vectors
+    d - numpy 1d array
+        vector of constraints
+    Output:
+    w_wn 
+    """
+    K_inv = get_K_inv(outer_list, s, eps)
+    w_wn = K_inv@E@(E.T.conj()@K_inv@E)@(d.T.conj())
+    return w_wn
+
 def db_down(outer_list, s, eps, w):
     """
     Get the inverse white noise gain in db for a given diagonal weighting eps
@@ -67,6 +87,12 @@ def db_down(outer_list, s, eps, w):
         Number of db's below the maximum white noise value of 1
     """
     w_wn = get_w_wn(outer_list, s, eps, w)
+    mag = np.square(np.linalg.norm(w_wn))#*w_wn
+    # I only divide by 1 because we normalize the weight vector to 1 in Bartlett
+    return 10*np.log10(1/mag)
+
+def mcm_db_down(outer_list, s, eps, E, d):
+    w_wn = get_mcm_w_wn(outer_list, s, eps, E, d)
     mag = np.square(np.linalg.norm(w_wn))#*w_wn
     # I only divide by 1 because we normalize the weight vector to 1 in Bartlett
     return 10*np.log10(1/mag)
@@ -102,6 +128,56 @@ def find_eps(outer_list, s, db_gain, w):
     ind = np.argmin(vals) # choose best index
     best_eps = eps[ind] # fetch the best epsilon corresponding to that
     return best_eps
+
+def mcm_find_eps_bi(outer_list, s, delta_db, E, d, tol=.01, max_num_iter=1000):
+    """
+    Use bisection to compute the epsilon diagonal loading value required to achieve
+    a white noise gain of delta_db. For example, if you want white noise gain of 0.1, 
+    delta_db = 10*np.log10(.1 /1) = -10 
+    
+    Input:
+    v - numpy 2d array
+        eigenvector matrix for sample cov
+    s - numpy 1d array
+        eigenvalue matrix for sample cov
+    delta_db - float
+        value of white noise gain in db normalized to 1
+        If you want white noise gain to be fixed at 1, set delta_db = 0
+    tol (optional) - float
+        How close you want to be to delta_db
+    max_num_iter - int
+        How many cycles before you give up
+    Output:
+
+    float (could be "middle", "a_largeish_number", or "left") depending on the case 
+        The "epsilon" diagonal loading used for the WNGC beamformer
+    """
+    left, right = np.power(10.0,-160), 1000.0 # set search bounds
+    middle = np.power(10, .5*(np.log10(left) + np.log10(right))) # take geometric mean
+    a_largeish_number = 1000.0 # fix the return value if delta_db = 0 is desired
+    # if you want no white noise gain, epsilon should be infinite
+    if delta_db == 0:
+        return right
+    # find out if the constraint is already satisfied (aka your white noise gain is lower than even the MVDR processor implies
+    wng_left = mcm_db_down(outer_list, s, left, E, d)
+    if wng_left >= delta_db: # can't get any lower
+        return left
+    else:
+        # perform bisection to hone in on the value of epsilon
+        wng_middle = mcm_db_down(outer_list,s,middle,E, d)
+        num_iter = 0
+        while abs(wng_middle - delta_db) > tol:
+            num_iter += 1
+            if wng_middle < delta_db:
+                left = middle # move left bracket
+            if wng_middle > delta_db:
+                right = middle # move right bracket
+            middle = np.power(10, .5*(np.log10(left) + np.log10(right)))  # move middle
+            wng_middle = mcm_db_down(outer_list,s,middle,E, d) # compute value of white noise gain at middle
+            if num_iter > max_num_iter:
+                print('Warning- Bisection did not converge in ' + str(max_num_iter) + ' iterations')
+                return middle
+        return middle
 
 def find_eps_bi(outer_list, s, delta_db, w, tol=.01, max_num_iter=1000):
     """
