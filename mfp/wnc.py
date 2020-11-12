@@ -1,5 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
+from numba import jit
 import time
 
 '''
@@ -345,7 +346,8 @@ def get_K_inv(outer_list, s, eps):
         tmp = outer_list[k] # fetch jth outer product matrix
         K_inv += tmp/(s[k]+eps) # scale by eigenvalue and epsilon
     return K_inv
-    
+   
+@jit(nopython=True) 
 def run_wnc(R_samp,replicas, delta_db):
     """
     replicas - numpy 3d array
