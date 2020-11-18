@@ -68,7 +68,7 @@ def get_mcm_w_wn(outer_list, s, eps, E, d, E_H, d_H):
     w_wn 
     """
     K_inv = get_K_inv(outer_list, s, eps)
-    w_wn = (K_inv@E)@(E_H@K_inv@E)@(d_H)
+    w_wn = (K_inv@E)@np.linalg.inv(E_H@K_inv@E)@(d_H)
     return w_wn
 
 @jit(nopython=True) 
@@ -139,7 +139,7 @@ def find_eps(outer_list, s, db_gain, w):
     return best_eps
 
 @jit(nopython=True)
-def mcm_find_eps_bi(outer_list, s, delta_db, E, d, tol=.01, max_num_iter=1000):
+def mcm_find_eps_bi(outer_list, s, delta_db, E, d, E_H, d_H, tol=.01, max_num_iter=1000):
     """
     Use bisection to compute the epsilon diagonal loading value required to achieve
     a white noise gain of delta_db. For example, if you want white noise gain of 0.1, 
@@ -162,8 +162,6 @@ def mcm_find_eps_bi(outer_list, s, delta_db, E, d, tol=.01, max_num_iter=1000):
     float (could be "middle", "a_largeish_number", or "left") depending on the case 
         The "epsilon" diagonal loading used for the WNGC beamformer
     """
-    E_H = np.ascontiguousarray(E.T.conj())
-    d_H = np.ascontiguousarray(d.T.conj())
     left, right = np.power(10.0,-160), 1000.0 # set search bounds
     middle = np.power(10, .5*(np.log10(left) + np.log10(right))) # take geometric mean
     a_largeish_number = 1000.0 # fix the return value if delta_db = 0 is desired
@@ -378,7 +376,7 @@ def run_wnc(R_samp,replicas, delta_db):
         First axis is receiver index, second is depth, third is range
         Values are complex pressure 
     R_samp - numpy 3d array (or 2d array)
-        Sample cov, first two axes are the receiver indices, third axis is time
+        Sample cov, last two axes are the receiver indices, first axis is time
     delta_db - float <= 0 
         white noise gain
     Compute ambiguity surface for replicas using white noise constraint beamformer
@@ -394,16 +392,16 @@ def run_wnc(R_samp,replicas, delta_db):
     num_depths = replicas.shape[1]
     num_ranges = replicas.shape[2]
     num_guesses = num_depths*num_ranges #how many replicas
-    num_times = R_samp.shape[-1]
+    num_times = R_samp.shape[0]
     replicas = replicas.reshape(num_rcvrs, num_guesses)
-    output = np.zeros((num_depths, num_ranges, num_times)) # ambiguity surface
+    output = np.zeros((num_times, num_depths, num_ranges)) # ambiguity surface
     eps_list = [] # to track the diagonal loading
 
     """
     Now loop through replicas and compute beamformer output
     """
     for i in prange(num_times):
-        curr_R = R_samp[:,:,i]
+        curr_R = R_samp[i,...]
         outer_list, s, v = get_eig_outers(curr_R)
         for j in prange(num_guesses): # for each replica
             w = replicas[:,j] # fetch ith replica 
@@ -419,17 +417,16 @@ def run_wnc(R_samp,replicas, delta_db):
             w_wnc = K_inv@w / (w.T.conj()@K_inv@w) 
 
             """ Plug weighting vector into quadratic form (the beamformer ''power'' output) """
-            output[j//num_ranges, j%num_ranges,i] = abs(w_wnc.T.conj()@curr_R@w_wnc)
+            output[i, j//num_ranges, j%num_ranges] = abs(w_wnc.T.conj()@curr_R@w_wnc)
     return output
 
-@jit(nopython=True, parallel=True) 
 def lookup_run_wnc(R_samp,replicas, delta_db):
     """
     replicas - numpy 3d array
         First axis is receiver index, second is source depth, third is source range
         Values are complex pressure 
     R_samp - numpy 3d array
-        Sample cov, first two axes are the receiver indices, third axis is time
+        Sample cov, last two axes are the receiver indices, first axis
     delta_db - float <= 0 
         white noise gain
     Compute ambiguity surface for replicas using white noise constraint beamformer
@@ -443,9 +440,9 @@ def lookup_run_wnc(R_samp,replicas, delta_db):
         R_samp = R_samp.reshape(R_samp.shape[0], R_samp.shape[1], 1)
     num_rcvrs, num_depths, num_ranges = replicas.shape
     num_guesses = num_depths*num_ranges #how many replicas
-    num_times = R_samp.shape[-1]
+    num_times = R_samp.shape[0]
     replicas = replicas.reshape(num_rcvrs, num_guesses)
-    output = np.zeros((num_depths, num_ranges, num_times)) # ambiguity surface
+    output = np.zeros((num_times, num_depths, num_ranges)) # ambiguity surface
     eps_list = [] # to track the diagonal loading
 
     """
@@ -454,7 +451,7 @@ def lookup_run_wnc(R_samp,replicas, delta_db):
     eps_vals =  np.power(10, np.linspace(-160, 3, 1000))
     for i in prange(num_times):
         #print('Proc for time i', i)
-        curr_R = R_samp[:,:,i]
+        curr_R = R_samp[i,...]
         outer_list, s, v = get_eig_outers(curr_R)
         K_inv_list = [get_K_inv(outer_list, s, x) for x in eps_vals]
         for j in prange(num_guesses): # for each replica
@@ -477,7 +474,7 @@ def lookup_run_wnc(R_samp,replicas, delta_db):
             w_wnc = K_inv@w / (w.T.conj()@K_inv@w) 
 
             """ Plug weighting vector into quadratic form (the beamformer ''power'' output) """
-            output[j//num_ranges, j%num_ranges,i] = abs(w_wnc.T.conj()@curr_R@w_wnc)
+            output[i, j//num_ranges, j%num_ranges] = abs(w_wnc.T.conj()@curr_R@w_wnc)
     return output
 
 
