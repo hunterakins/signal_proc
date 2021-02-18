@@ -24,8 +24,8 @@ def form_constraint_mat(rep_arr, look_ind=0):
     rep_arr - numpy arrays 4d array
         first axis gives the replica set for a constraint point
         the replicas are np nd arrays
-        first axis is receiver index, second is depth
-        third is range
+        second axis is receiver index,third is depth
+        fourth is range
         the list is formed such that 
         rep_arr[i,:,k,l] is the ith column of 
         the constraint matrix E
@@ -72,10 +72,10 @@ def run_mcm(R_samp, rep_arr, look_ind=0):
     num_depths, num_ranges = rep_arr.shape[2], rep_arr.shape[3]
     E, d_vecs = form_constraint_mat(rep_arr, look_ind=look_ind) 
     num_look_directions = E.shape[0]
+    print(num_look_directions)
     output = np.zeros((num_times, num_depths, num_ranges))
     for i in prange(num_times):
         K = R_samp[i,...]
-        print('K condition number', np.linalg.cond(K))
         K_inv = np.linalg.inv(K)
         for j in prange(num_look_directions):
             curr_E = E[j,...]
@@ -83,9 +83,10 @@ def run_mcm(R_samp, rep_arr, look_ind=0):
             curr_d = d_vecs[j, :]
             curr_d = curr_d.reshape(1,curr_d.size)
             curr_d_T = np.ascontiguousarray(curr_d.T)
+            middle_term = curr_E.T.conj()@K_inv@curr_E
             pow_val = curr_d@np.linalg.inv(curr_E_T.conj()@K_inv@curr_E)@(curr_d_T.conj())
             pow_val = pow_val[0,0]
-            output[i, j//num_ranges, j%num_ranges] = pow_val.real
+            output[i, j//num_ranges, j%num_ranges] = abs(pow_val)
     return output
 
 @jit(nopython=True, parallel=True)

@@ -395,7 +395,7 @@ def run_wnc(R_samp,replicas, delta_db):
     num_times = R_samp.shape[0]
     replicas = replicas.reshape(num_rcvrs, num_guesses)
     output = np.zeros((num_times, num_depths, num_ranges)) # ambiguity surface
-    eps_list = [] # to track the diagonal loading
+    #eps_list = [] # to track the diagonal loading
 
     """
     Now loop through replicas and compute beamformer output
@@ -409,7 +409,7 @@ def run_wnc(R_samp,replicas, delta_db):
         
             """ Get epsilon value for specific white noise gain """
             eps = find_eps_bi(outer_list, s,delta_db, w) # compute epsilon
-            eps_list.append(eps) # add it to the list in case you want to plot or debug
+            #eps_list.append(eps) # add it to the list in case you want to plot or debug
             """ Comput sample covariance regularized inverse"""
             K_inv = get_K_inv(outer_list, s, eps)
 
